@@ -3,8 +3,6 @@ import fs from 'fs';
 import path from 'path';
 // import { fileURLToPath } from "url";
 
-dotenv.config();
-
 // const __filename = fileURLToPath(import.meta.url);
 // const __dirname = path.dirname(__filename);
 
@@ -17,7 +15,10 @@ export interface AppConfig {
   backupCommand?: string;
 }
 
-export const loadConfig = (): AppConfig => {
+export const loadConfig = (envPath: string = '.env'): AppConfig => {
+  // Load environment variables from specific file
+  dotenv.config({ path: path.resolve(process.cwd(), envPath) });
+
   const endpoint = process.env.APPWRITE_ENDPOINT;
   const projectId = process.env.APPWRITE_PROJECT_ID;
   const apiKey = process.env.APPWRITE_API_KEY;

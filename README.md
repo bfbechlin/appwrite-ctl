@@ -19,6 +19,32 @@ npm install -g appwrite-migrations
 npm install --save-dev appwrite-migrations
 ```
 
+### From Repository
+
+To install directly from the GitHub repository:
+
+```bash
+npm install github:bfbechlin/appwrite-migrations
+# or for a specific branch
+npm install github:bfbechlin/appwrite-migrations#main
+```
+
+npm install --save-dev appwrite-migrations
+
+````
+
+## CLI Usage
+
+You can specify a custom environment file using the `-e` or `--env` flag.
+
+```bash
+# Default (uses .env)
+npx appwrite-migrate run
+
+# Custom environment file
+npx appwrite-migrate run --env .env.prod
+````
+
 ## Prerequisites
 
 - **Node.js**: v18 or higher.

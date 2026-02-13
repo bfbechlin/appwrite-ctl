@@ -16,10 +16,7 @@ import {
 
 const program = new Command();
 
-program
-  .name('appwrite-migrate')
-  .description('Manage Appwrite infrastructure via Version Snapshots')
-  .version('1.0.0');
+program.option('-e, --env <path>', 'Path to environment file', '.env');
 
 program
   .command('init')
@@ -52,7 +49,8 @@ program
   .description('Create the system_migration collection in Appwrite')
   .action(async () => {
     try {
-      const config = loadConfig();
+      const options = program.opts();
+      const config = loadConfig(options.env);
       const { databases } = createAppwriteClient(config);
       await ensureMigrationCollection(databases, config);
       console.log(chalk.green(`Collection '${config.migrationCollectionId}' ensures existence.`));
@@ -136,7 +134,8 @@ program
   .description('Execute pending migrations')
   .action(async () => {
     try {
-      await runMigrations();
+      const options = program.opts();
+      await runMigrations(options.env);
     } catch (error: any) {
       console.error(chalk.red('Migration run failed:'), error.message);
       process.exit(1);
@@ -148,7 +147,8 @@ program
   .description('List migration status')
   .action(async () => {
     try {
-      const config = loadConfig();
+      const options = program.opts();
+      const config = loadConfig(options.env);
       const { databases } = createAppwriteClient(config);
       const appliedIds = await getAppliedMigrations(databases, config);
       const appliedSet = new Set(appliedIds);

@@ -11,8 +11,8 @@ import { Migration, MigrationContext } from '../types/index.js';
 const execAsync = promisify(exec);
 const jiti = createJiti(import.meta.url);
 
-export const runMigrations = async () => {
-  const config = loadConfig();
+export const runMigrations = async (envPath: string = '.env') => {
+  const config = loadConfig(envPath);
   const { client, databases } = createAppwriteClient(config);
 
   console.log('Starting migration process...');
