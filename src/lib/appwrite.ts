@@ -60,11 +60,9 @@ export const getAppliedMigrations = async (
   config: AppConfig,
 ): Promise<string[]> => {
   try {
-    const response = await databases.listDocuments(
-      config.database,
-      config.migrationCollectionId,
-      [Query.limit(5000)],
-    );
+    const response = await databases.listDocuments(config.database, config.migrationCollectionId, [
+      Query.limit(5000),
+    ]);
     return response.documents.map((doc) => doc.$id);
   } catch (error: any) {
     if (error.code === 404) {

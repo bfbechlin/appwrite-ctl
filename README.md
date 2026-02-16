@@ -183,13 +183,13 @@ npx appwrite-ctl migrations status
 
 ## CLI Commands
 
-| Command         | Description                                            |
-| :-------------- | :----------------------------------------------------- |
-| `init`          | Initialize the project folder structure and config. |
+| Command                    | Description                                                           |
+| :------------------------- | :-------------------------------------------------------------------- |
+| `init`                     | Initialize the project folder structure and config.                   |
 | `migrations setup`         | Create the `system` database and `migrations` collection in Appwrite. |
-| `migrations create <name>` | Create a new migration version folder with snapshot.   |
-| `migrations run`           | Execute all pending migrations in order.               |
-| `migrations status`        | List applied and pending migrations.                   |
+| `migrations create <name>` | Create a new migration version folder with snapshot.                  |
+| `migrations run`           | Execute all pending migrations in order.                              |
+| `migrations status`        | List applied and pending migrations.                                  |
 
 ## License
 

@@ -16,7 +16,9 @@ import {
 
 const program = new Command();
 
-program.name('appwrite-ctl').description('Appwrite CLI for managing migrations and other operations');
+program
+  .name('appwrite-ctl')
+  .description('Appwrite CLI for managing migrations and other operations');
 
 program.option('-e, --env <path>', 'Path to environment file', '.env');
 
@@ -92,7 +94,7 @@ migrations
 
     fs.mkdirSync(versionPath);
 
-    const indexContent = `import { Migration } from "appwrite-migrations";
+    const indexContent = `import { Migration } from "appwrite-ctl";
 
 const migration: Migration = {
   id: "${uuidv4()}",
@@ -132,11 +134,19 @@ export default migration;
       console.log(chalk.green(`Copied snapshot from ${sourceJson}`));
     } else {
       console.warn(chalk.yellow('Warning: No appwrite.json found to copy as snapshot.'));
-      console.warn(
-        chalk.yellow(
-          'This migration will not include a schema snapshot. You can generate one later by running "appwrite init project".',
-        ),
+      console.warn(chalk.yellow('Generating a default empty appwrite.json for this migration.'));
+
+      const defaultSnapshot = {
+        projectId: 'YOUR_PROJECT_ID',
+        projectName: 'YOUR_PROJECT_NAME',
+        collections: [],
+      };
+
+      fs.writeFileSync(
+        path.join(versionPath, 'appwrite.json'),
+        JSON.stringify(defaultSnapshot, null, 2),
       );
+      console.log(chalk.green('Created default appwrite.json snapshot.'));
     }
 
     console.log(chalk.green(`Created migration v${nextVersion} at ${versionPath}`));

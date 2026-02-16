@@ -231,7 +231,9 @@ async function waitForAttributes(
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       } catch (e: any) {
-        console.warn(`Failed to list attributes for ${collectionId} in DB ${targetDbId}: ${e.message}. Retrying...`);
+        console.warn(
+          `Failed to list attributes for ${collectionId} in DB ${targetDbId}: ${e.message}. Retrying...`,
+        );
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
