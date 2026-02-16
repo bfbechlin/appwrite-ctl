@@ -76,16 +76,12 @@ migrations
   });
 
 migrations
-  .command('create <name>')
+  .command('create')
   .description('Create a new migration version')
-  .action(async (name) => {
+  .action(async () => {
     const migrationsDir = path.join(process.cwd(), 'appwrite', 'migration');
 
-    // Find next version number or use timestamp? Requirement says "vX".
-    // "Discovery: Varre ... ordena ... alfabeticamente"
-    // "create <name>: Gera uma nova pasta de versão"
-    // Usually v1, v2...
-    // Let's check existing folders.
+    // Find next version number
     const versionDirs = fs
       .readdirSync(migrationsDir)
       .filter(
@@ -96,6 +92,7 @@ migrations
 
     const nextVersion = (versionDirs.length > 0 ? versionDirs[versionDirs.length - 1] : 0) + 1;
     const versionPath = path.join(migrationsDir, `v${nextVersion}`);
+    const name = `migration_v${nextVersion}`;
 
     fs.mkdirSync(versionPath);
 
@@ -119,9 +116,7 @@ export default migration;
 
     fs.writeFileSync(path.join(versionPath, 'index.ts'), indexContent);
 
-    // Copy snapshot (appwrite.json) from previous version or root?
-    // "copia o snapshot mais recente para a nova pasta"
-    // If v(N-1) exists, copy from there. use root appwrite.json if not.
+    // Initial Snapshot Logic (Copy or Fetch)
     let sourceJson = path.join(process.cwd(), 'appwrite.json');
     if (versionDirs.length > 0) {
       const lastVersionPath = path.join(
@@ -185,6 +180,45 @@ export default migration;
     }
 
     console.log(chalk.green(`Created migration v${nextVersion} at ${versionPath}`));
+  });
+
+migrations
+  .command('update <version>')
+  .description('Update appwrite.json for a version with current schema dump')
+  .action(async (version) => {
+    const migrationsDir = path.join(process.cwd(), 'appwrite', 'migration');
+    const versionPath = path.join(migrationsDir, version);
+
+    if (!fs.existsSync(versionPath)) {
+      console.error(chalk.red(`Version directory ${version} not found.`));
+      process.exit(1);
+    }
+
+    console.log(chalk.blue(`Updating snapshot for ${version}...`));
+
+    try {
+      const options = program.opts();
+      const config = loadConfig(options.env);
+
+      if (config.endpoint && config.projectId && config.apiKey) {
+        const schema = await fetchProjectSchema(config);
+
+        fs.writeFileSync(
+          path.join(versionPath, 'appwrite.json'),
+          JSON.stringify(
+            schema,
+            (key, value) => (typeof value === 'bigint' ? value.toString() : value),
+            2,
+          ),
+        );
+        console.log(chalk.green(`Successfully updated appwrite.json for ${version}`));
+      } else {
+        throw new Error('Missing environment variables');
+      }
+    } catch (error: any) {
+      console.error(chalk.red(`Failed to update snapshot: ${error.message}`));
+      process.exit(1);
+    }
   });
 
 migrations
