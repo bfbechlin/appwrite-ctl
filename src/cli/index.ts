@@ -2,10 +2,14 @@
 
 import { Command } from 'commander';
 import inquirer from 'inquirer';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import chalk from 'chalk';
+
+const execAsync = promisify(exec);
 import { runMigrations } from '../lib/runner.js';
 import { loadConfig } from '../lib/config.js';
 import {
@@ -133,20 +137,52 @@ export default migration;
       fs.copyFileSync(sourceJson, path.join(versionPath, 'appwrite.json'));
       console.log(chalk.green(`Copied snapshot from ${sourceJson}`));
     } else {
-      console.warn(chalk.yellow('Warning: No appwrite.json found to copy as snapshot.'));
-      console.warn(chalk.yellow('Generating a default empty appwrite.json for this migration.'));
+      console.log(chalk.blue('No previous snapshot found. Attempting to fetch from Appwrite...'));
+      let fetched = false;
 
-      const defaultSnapshot = {
-        projectId: 'YOUR_PROJECT_ID',
-        projectName: 'YOUR_PROJECT_NAME',
-        collections: [],
-      };
+      try {
+        const options = program.opts();
+        const config = loadConfig(options.env);
 
-      fs.writeFileSync(
-        path.join(versionPath, 'appwrite.json'),
-        JSON.stringify(defaultSnapshot, null, 2),
-      );
-      console.log(chalk.green('Created default appwrite.json snapshot.'));
+        if (config.endpoint && config.projectId && config.apiKey) {
+          // Configure CLI
+          await execAsync(
+            `appwrite client --endpoint ${config.endpoint} --project-id ${config.projectId} --key ${config.apiKey}`,
+          );
+
+          // Fetch Schema
+          // We run this in the versionDir so appwrite.json is created there
+          await execAsync(`appwrite init project --project-id ${config.projectId}`, {
+            cwd: versionPath,
+          });
+
+          // Verify it exists
+          if (fs.existsSync(path.join(versionPath, 'appwrite.json'))) {
+            console.log(chalk.green('Successfully fetched schema snapshot from Appwrite.'));
+            fetched = true;
+          }
+        }
+      } catch (error: any) {
+        console.warn(chalk.yellow(`Failed to fetch snapshot from Appwrite: ${error.message}`));
+        console.warn(chalk.yellow('Make sure Appwrite CLI is installed and .env is configured.'));
+      }
+
+      if (!fetched) {
+        console.warn(chalk.yellow('Warning: Could not fetch real snapshot.'));
+        console.warn(chalk.yellow('Generating a default empty appwrite.json for this migration.'));
+
+        const defaultSnapshot = {
+          projectId: 'YOUR_PROJECT_ID',
+          projectName: 'YOUR_PROJECT_NAME',
+          collections: [],
+        };
+
+        fs.writeFileSync(
+          path.join(versionPath, 'appwrite.json'),
+          JSON.stringify(defaultSnapshot, null, 2),
+        );
+        console.log(chalk.green('Created default appwrite.json snapshot.'));
+      }
     }
 
     console.log(chalk.green(`Created migration v${nextVersion} at ${versionPath}`));
