@@ -5,3 +5,5 @@ dist
 coverage
 .vscode
 *.log
+
+appwrite/*

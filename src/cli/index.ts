@@ -12,6 +12,7 @@ import chalk from 'chalk';
 const execAsync = promisify(exec);
 import { runMigrations } from '../lib/runner.js';
 import { loadConfig } from '../lib/config.js';
+import { fetchProjectSchema } from '../lib/schema.js';
 import {
   createAppwriteClient,
   ensureMigrationCollection,
@@ -145,26 +146,24 @@ export default migration;
         const config = loadConfig(options.env);
 
         if (config.endpoint && config.projectId && config.apiKey) {
-          // Configure CLI
-          await execAsync(
-            `appwrite client --endpoint ${config.endpoint} --project-id ${config.projectId} --key ${config.apiKey}`,
+          // Use SDK to fetch schema
+          const schema = await fetchProjectSchema(config);
+
+          fs.writeFileSync(
+            path.join(versionPath, 'appwrite.json'),
+            JSON.stringify(
+              schema,
+              (key, value) => (typeof value === 'bigint' ? value.toString() : value),
+              2,
+            ),
           );
 
-          // Fetch Schema
-          // We run this in the versionDir so appwrite.json is created there
-          await execAsync(`appwrite init project --project-id ${config.projectId}`, {
-            cwd: versionPath,
-          });
-
-          // Verify it exists
-          if (fs.existsSync(path.join(versionPath, 'appwrite.json'))) {
-            console.log(chalk.green('Successfully fetched schema snapshot from Appwrite.'));
-            fetched = true;
-          }
+          console.log(chalk.green('Successfully fetched schema snapshot from Appwrite.'));
+          fetched = true;
         }
       } catch (error: any) {
         console.warn(chalk.yellow(`Failed to fetch snapshot from Appwrite: ${error.message}`));
-        console.warn(chalk.yellow('Make sure Appwrite CLI is installed and .env is configured.'));
+        console.warn(chalk.yellow('Make sure .env is configured correctly.'));
       }
 
       if (!fetched) {
