@@ -134,16 +134,6 @@ export const runMigrations = async (envPath: string = '.env') => {
     }
 
     // 5. Polling de Atributos
-    // This requires us to know WHICH collections were updated.
-    // The snapshot applies EVERYTHING in appwrite.json?
-    // User says "polling of attributes (critical)".
-    // We should probably check ALL (or changed) attributes.
-    // Since we don't easily know which ones changed without diffing,
-    // we might need to scan all collections defined in the snapshot appwrite.json?
-    // Or just wait for 'available' status on all attributes of collections in the project?
-    // Scanning all might be slow.
-    // Let's parse the appwrite.json to find collection IDs.
-
     if (fs.existsSync(appwriteJsonPath)) {
       await waitForAttributes(databases, config, appwriteJsonPath);
     }
@@ -173,15 +163,6 @@ export const runMigrations = async (envPath: string = '.env') => {
     // update root appwrite.json
     if (fs.existsSync(appwriteJsonPath)) {
       const rootAppwriteJsonPath = path.join(process.cwd(), 'appwrite.json');
-      // Or "appwrite/appwrite.json"? User said "./appwrite/appwrite.json na raiz".
-      // Usually it's in the root of the project.
-      // But user request said: "Finalização: ... atualiza o arquivo ./appwrite/appwrite.json na raiz"
-      // This might interpret as ./appwrite.json OR ./appwrite/appwrite.json.
-      // Standard appwrite structure is appwrite.json in root.
-      // CHECK: "init: Cria a pasta /appwrite ... e a infraestrutura".
-      // Maybe the user keeps appwrite.json inside /appwrite/ ?
-      // I will write to `appwrite.json` in the current working directory as is standard, OR where it exists.
-
       fs.copyFileSync(appwriteJsonPath, 'appwrite.json');
     }
 
@@ -220,15 +201,37 @@ async function waitForAttributes(
 
     let allAvailable = false;
     while (!allAvailable) {
-      const response = await databases.listAttributes(config.databaseId, collectionId);
-      const attributes = response.attributes;
+      // Use config.database (system_migrations DB) ? NO.
+      // The schema sync applies to the TARGET database.
+      // Which DB is that?
+      // "appwrite deploy collection" deploys to the project's default database usually?
+      // Or does it respect database ID in appwrite.json?
+      // appwrite.json structure usually has:
+      // "collections": [ { "$id": "...", "$databaseId": "...", ... } ]
+      // If $databaseId is present, it deploys there.
+      // If NOT, it might deploy to default?
+      // The old code used config.databaseId (which was 'default').
+      // Now config.database is 'system'.
+      // BUT waitForAttributes is checking user collections, NOT migration collection.
+      // So we should NOT use config.database here if config.database is now 'system'.
+      // We need to check the database ID defined in the collection schema or default to 'default'.
 
-      const pending = attributes.filter((attr: any) => attr.status !== 'available');
+      const targetDbId = col.databaseId || 'default'; // appwrite.json collections usually have databaseId
 
-      if (pending.length === 0) {
-        allAvailable = true;
-      } else {
-        console.log(`Waiting for ${pending.length} attributes to be available...`);
+      try {
+        const response = await databases.listAttributes(targetDbId, collectionId);
+        const attributes = response.attributes;
+
+        const pending = attributes.filter((attr: any) => attr.status !== 'available');
+
+        if (pending.length === 0) {
+          allAvailable = true;
+        } else {
+          console.log(`Waiting for ${pending.length} attributes to be available...`);
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      } catch (e: any) {
+        console.warn(`Failed to list attributes for ${collectionId} in DB ${targetDbId}: ${e.message}. Retrying...`);
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }

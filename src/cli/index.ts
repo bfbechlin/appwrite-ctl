@@ -16,9 +16,13 @@ import {
 
 const program = new Command();
 
+program.name('appwrite-ctl').description('Appwrite CLI for managing migrations and other operations');
+
 program.option('-e, --env <path>', 'Path to environment file', '.env');
 
-program
+const migrations = program.command('migrations').description('Manage Appwrite migrations');
+
+migrations
   .command('init')
   .description('Initialize the migrations project structure')
   .action(async () => {
@@ -32,8 +36,8 @@ program
 
     if (!fs.existsSync(configPath)) {
       const config = {
-        collection: 'system_migrations',
-        databaseId: 'default',
+        collection: 'migrations',
+        database: 'system',
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
       console.log(chalk.green('Created appwrite/migration/config.json'));
@@ -44,23 +48,27 @@ program
     console.log(chalk.green('Initialization complete.'));
   });
 
-program
+migrations
   .command('setup')
-  .description('Create the system_migration collection in Appwrite')
+  .description('Create the system database and migrations collection in Appwrite')
   .action(async () => {
     try {
       const options = program.opts();
       const config = loadConfig(options.env);
       const { databases } = createAppwriteClient(config);
       await ensureMigrationCollection(databases, config);
-      console.log(chalk.green(`Collection '${config.migrationCollectionId}' ensures existence.`));
+      console.log(
+        chalk.green(
+          `System database '${config.database}' and collection '${config.migrationCollectionId}' ensured.`,
+        ),
+      );
     } catch (error: any) {
       console.error(chalk.red('Setup failed:'), error.message);
       process.exit(1);
     }
   });
 
-program
+migrations
   .command('create <name>')
   .description('Create a new migration version')
   .action(async (name) => {
@@ -84,7 +92,7 @@ program
 
     fs.mkdirSync(versionPath);
 
-    const indexContent = `import { Migration } from "../../types";
+    const indexContent = `import { Migration } from "appwrite-migrations";
 
 const migration: Migration = {
   id: "${uuidv4()}",
@@ -123,13 +131,31 @@ export default migration;
       fs.copyFileSync(sourceJson, path.join(versionPath, 'appwrite.json'));
       console.log(chalk.green(`Copied snapshot from ${sourceJson}`));
     } else {
-      console.warn(chalk.yellow('No appwrite.json found to copy as snapshot.'));
+      // Revert creation if snapshot fails? Or just Warn?
+      // User says "Ao criar a migração um snapshot precisa ser buscado e colocado dentro da versão!"
+      // So failing is appropriate if we can't get it.
+      // But maybe user just initialized?
+      console.error(chalk.red('Error: No appwrite.json found to copy as snapshot.'));
+      console.error(
+        chalk.yellow(
+          'Please ensure you have an appwrite.json file in your project root or previous migrations.',
+        ),
+      );
+      console.error(
+        chalk.yellow(
+          'You can generate one by running "appwrite init project" or "appwrite init collection" using the Appwrite CLI.',
+        ),
+      );
+
+      // Cleanup
+      fs.rmSync(versionPath, { recursive: true, force: true });
+      process.exit(1);
     }
 
     console.log(chalk.green(`Created migration v${nextVersion} at ${versionPath}`));
   });
 
-program
+migrations
   .command('run')
   .description('Execute pending migrations')
   .action(async () => {
@@ -142,7 +168,7 @@ program
     }
   });
 
-program
+migrations
   .command('status')
   .description('List migration status')
   .action(async () => {

@@ -1,10 +1,10 @@
 {
-  "name": "appwrite-migrations",
+  "name": "appwrite-ctl",
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
   "bin": {
-    "appwrite-migrate": "./dist/cli/index.js"
+    "appwrite-ctl": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -33,7 +33,7 @@
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.2.3",
     "@types/uuid": "^10.0.0",
-    "eslint": "^10.0.0",
+    "eslint": "^9.14.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.3.0",
     "prettier": "^3.8.1",

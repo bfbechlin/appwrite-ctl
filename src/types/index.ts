@@ -23,7 +23,7 @@ export interface Migration {
 
 export interface Config {
   collection: string; // Connection ID for system_migrations
-  databaseId: string; // Database ID where migrations are tracked (usually 'default' or specific)
+  database: string; // Database ID where migrations are tracked (defaults to 'system')
 }
 
 export interface MigrationFile {

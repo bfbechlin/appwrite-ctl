@@ -1,4 +1,4 @@
-# Appwrite Migrations
+# Appwrite Ctl
 
 A Node.js (ESM) package to manage Appwrite infrastructure via Version Snapshots. This tool uses a "desired state" approach, where each version is a folder containing a complete snapshot of the schema (`appwrite.json`) and data migration logic.
 
@@ -14,9 +14,9 @@ A Node.js (ESM) package to manage Appwrite infrastructure via Version Snapshots.
 ## Installation
 
 ```bash
-npm install -g appwrite-migrations
+npm install -g appwrite-ctl
 # or
-npm install --save-dev appwrite-migrations
+npm install --save-dev appwrite-ctl
 ```
 
 ### From Repository
@@ -24,14 +24,10 @@ npm install --save-dev appwrite-migrations
 To install directly from the GitHub repository:
 
 ```bash
-npm install github:bfbechlin/appwrite-migrations
+npm install github:bfbechlin/appwrite-ctl
 # or for a specific branch
-npm install github:bfbechlin/appwrite-migrations#main
+npm install github:bfbechlin/appwrite-ctl#main
 ```
-
-npm install --save-dev appwrite-migrations
-
-````
 
 ## CLI Usage
 
@@ -39,11 +35,11 @@ You can specify a custom environment file using the `-e` or `--env` flag.
 
 ```bash
 # Default (uses .env)
-npx appwrite-migrate run
+npx appwrite-ctl migrations run
 
 # Custom environment file
-npx appwrite-migrate run --env .env.prod
-````
+npx appwrite-ctl migrations run --env .env.prod
+```
 
 ## Prerequisites
 
@@ -64,7 +60,7 @@ This tool is designed to work in CI/CD environments without interactive login.
 
 1.  **Install Appwrite CLI**: Ensure `appwrite-cli` is installed in your environment (`npm install -g appwrite-cli`).
 2.  **Set Environment Variables**: Configure `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`, and `APPWRITE_API_KEY`.
-3.  **Automatic Configuration**: When `appwrite-migrate run` is executed, it detects these variables and automatically configures the local Appwrite CLI instance using `appwrite client --key`.
+3.  **Automatic Configuration**: When `appwrite-ctl migrations run` is executed, it detects these variables and automatically configures the local Appwrite CLI instance using `appwrite client --key`.
 
 **Required API Key Scopes:**
 
@@ -80,7 +76,7 @@ This tool is designed to work in CI/CD environments without interactive login.
 Run the init command to create the necessary folder structure:
 
 ```bash
-npx appwrite-migrate init
+npx appwrite-ctl migrations init
 ```
 
 This creates:
@@ -93,7 +89,7 @@ This creates:
 Create the internal collection used to track migration status:
 
 ```bash
-npx appwrite-migrate setup
+npx appwrite-ctl migrations setup
 ```
 
 ### 3. Create a Migration
@@ -101,7 +97,7 @@ npx appwrite-migrate setup
 To create a new migration version:
 
 ```bash
-npx appwrite-migrate create "initial_schema"
+npx appwrite-ctl migrations create "initial_schema"
 ```
 
 This command:
@@ -129,7 +125,7 @@ This command:
 Edit `appwrite/migration/vX/index.ts` to define your data changes:
 
 ```typescript
-import { Migration } from 'appwrite-migrations';
+import { Migration } from 'appwrite-ctl';
 
 const migration: Migration = {
   id: 'uuid-generated-id',
@@ -157,7 +153,7 @@ export default migration;
 Execute all pending migrations:
 
 ```bash
-npx appwrite-migrate run
+npx appwrite-ctl migrations run
 ```
 
 The runner performs the following steps for each pending version:
@@ -173,15 +169,15 @@ The runner performs the following steps for each pending version:
 View the history of applied migrations:
 
 ```bash
-npx appwrite-migrate status
+npx appwrite-ctl migrations status
 ```
 
 ## Configuration (`appwrite/migration/config.json`)
 
 ```json
 {
-  "collection": "system_migrations",
-  "databaseId": "default"
+  "collection": "migrations",
+  "database": "system"
 }
 ```
 
@@ -189,11 +185,11 @@ npx appwrite-migrate status
 
 | Command         | Description                                            |
 | :-------------- | :----------------------------------------------------- |
-| `init`          | Initialize the `appwrite` folder structure and config. |
-| `setup`         | Create the `system_migrations` collection in Appwrite. |
-| `create <name>` | Create a new migration version folder with snapshot.   |
-| `run`           | Execute all pending migrations in order.               |
-| `status`        | List applied and pending migrations.                   |
+| `migrations init`          | Initialize the `appwrite` folder structure and config. |
+| `migrations setup`         | Create the `system` database and `migrations` collection in Appwrite. |
+| `migrations create <name>` | Create a new migration version folder with snapshot.   |
+| `migrations run`           | Execute all pending migrations in order.               |
+| `migrations status`        | List applied and pending migrations.                   |
 
 ## License
 

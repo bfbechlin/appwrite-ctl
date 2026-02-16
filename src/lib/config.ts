@@ -11,7 +11,7 @@ export interface AppConfig {
   projectId: string;
   apiKey: string;
   migrationCollectionId: string;
-  databaseId: string;
+  database: string;
   backupCommand?: string;
 }
 
@@ -34,8 +34,8 @@ export const loadConfig = (envPath: string = '.env'): AppConfig => {
   const rootDir = process.cwd();
   const configPath = path.join(rootDir, 'appwrite', 'migration', 'config.json');
 
-  let migrationCollectionId = 'system_migrations';
-  let databaseId = 'default';
+  let migrationCollectionId = 'migrations';
+  let database = 'system';
 
   if (fs.existsSync(configPath)) {
     try {
@@ -43,8 +43,11 @@ export const loadConfig = (envPath: string = '.env'): AppConfig => {
       if (fileConfig.collection) {
         migrationCollectionId = fileConfig.collection;
       }
-      if (fileConfig.databaseId) {
-        databaseId = fileConfig.databaseId;
+      if (fileConfig.database) {
+        database = fileConfig.database;
+      } else if (fileConfig.databaseId) {
+        // Backward compatibility
+        database = fileConfig.databaseId;
       }
     } catch (error) {
       console.warn('Could not parse config.json, using defaults.');
@@ -56,7 +59,7 @@ export const loadConfig = (envPath: string = '.env'): AppConfig => {
     projectId,
     apiKey,
     migrationCollectionId,
-    databaseId,
+    database,
     backupCommand,
   };
 };
