@@ -1,14 +1,13 @@
 import { Databases } from 'node-appwrite';
-import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { promisify } from 'util';
 import { createJiti } from 'jiti';
-import { AppConfig, loadConfig } from './config.js';
+import { loadConfig } from './config.js';
 import { createAppwriteClient, getAppliedMigrations, recordMigration } from './appwrite.js';
+import { configureClient, pushSnapshot, getSnapshotFilename } from './cli.js';
 import { Migration, MigrationContext } from '../types/index.js';
+import chalk from 'chalk';
 
-const execAsync = promisify(exec);
 const jiti = createJiti(import.meta.url);
 
 export const runMigrations = async (envPath: string = '.env') => {
@@ -17,23 +16,9 @@ export const runMigrations = async (envPath: string = '.env') => {
 
   console.log('Starting migration process...');
 
-  // 0. Auto-configure CLI
-  console.log('Configuring Appwrite CLI based on environment variables...');
-  try {
-    if (config.endpoint && config.projectId && config.apiKey) {
-      await execAsync(
-        `appwrite client --endpoint ${config.endpoint} --project-id ${config.projectId} --key ${config.apiKey}`,
-      );
-      console.log('Appwrite CLI configured successfully.');
-    } else {
-      console.warn('Skipping CLI configuration due to missing environment variables.');
-    }
-  } catch (error) {
-    console.warn(
-      "Failed to configure Appwrite CLI automatically. Ensure 'appwrite' is installed and environment variables are set.",
-    );
-    // console.warn(error);
-  }
+  // 0. Configure CLI with API key (non-interactive auth)
+  console.log('Configuring Appwrite CLI...');
+  await configureClient(config);
 
   // 1. Discovery
   const migrationsDir = path.join(process.cwd(), 'appwrite', 'migration');
@@ -48,8 +33,6 @@ export const runMigrations = async (envPath: string = '.env') => {
       (dir) => dir.startsWith('v') && fs.statSync(path.join(migrationsDir, dir)).isDirectory(),
     )
     .sort((a, b) => {
-      // simple alphanum sort, expects v1, v2, v10 etc to be sorted correctly if padded or just by string
-      // Better: extract number
       const numA = parseInt(a.substring(1));
       const numB = parseInt(b.substring(1));
       return numA - numB;
@@ -61,10 +44,11 @@ export const runMigrations = async (envPath: string = '.env') => {
   const appliedMigrationIds = await getAppliedMigrations(databases, config);
   const appliedSet = new Set(appliedMigrationIds);
 
+  const snapshotFilename = getSnapshotFilename();
+
   for (const version of versionDirs) {
     const versionPath = path.join(migrationsDir, version);
     const indexFile = path.join(versionPath, 'index.ts');
-    // Support .js as well
     const indexFileJs = path.join(versionPath, 'index.js');
 
     const validIndexFile = fs.existsSync(indexFile)
@@ -105,6 +89,9 @@ export const runMigrations = async (envPath: string = '.env') => {
     if (migration.requiresBackup && config.backupCommand) {
       console.log('Running backup command...');
       try {
+        const { exec } = await import('child_process');
+        const { promisify } = await import('util');
+        const execAsync = promisify(exec);
         await execAsync(config.backupCommand);
       } catch (error) {
         console.error('Backup failed:', error);
@@ -112,30 +99,28 @@ export const runMigrations = async (envPath: string = '.env') => {
       }
     } else if (migration.requiresBackup && !config.backupCommand) {
       console.warn(
-        'Migration requires backup checking but BACKUP_COMMAND is not set. Proceeding with caution...',
+        'Migration requires backup but BACKUP_COMMAND is not set. Proceeding with caution...',
       );
-      // Decide if we should exit or prompt. For now, warn.
     }
 
-    // 4. Schema Sync
-    const appwriteJsonPath = path.join(versionPath, 'appwrite.json');
-    if (fs.existsSync(appwriteJsonPath)) {
-      console.log(`Deploying schema for ${version}...`);
+    // 4. Schema Sync via CLI push
+    const snapshotPath = path.join(versionPath, snapshotFilename);
+    if (fs.existsSync(snapshotPath)) {
+      console.log(`Pushing schema snapshot for ${version}...`);
       try {
-        const relPath = path.relative(process.cwd(), appwriteJsonPath);
-        await execAsync(`appwrite deploy collection --all --yes --config "${relPath}"`);
-      } catch (error) {
-        console.error('Schema sync failed:', error);
-        console.error("Make sure you have 'appwrite-cli' installed and authenticated.");
+        await pushSnapshot(snapshotPath);
+      } catch (error: any) {
+        console.error('Schema push failed:', error.message);
+        console.error("Ensure 'appwrite-cli' is installed and accessible.");
         process.exit(1);
       }
     } else {
-      console.warn(`No appwrite.json found in ${version}. Skipping schema sync.`);
+      console.warn(`No ${snapshotFilename} found in ${version}. Skipping schema sync.`);
     }
 
-    // 5. Polling de Atributos
-    if (fs.existsSync(appwriteJsonPath)) {
-      await waitForAttributes(databases, config, appwriteJsonPath);
+    // 5. Attribute Polling
+    if (fs.existsSync(snapshotPath)) {
+      await waitForAttributes(databases, snapshotPath);
     }
 
     // 6. Data Execution
@@ -160,68 +145,49 @@ export const runMigrations = async (envPath: string = '.env') => {
     console.log('Finalizing...');
     await recordMigration(databases, config, migration.id, version);
 
-    // update root appwrite.json
-    if (fs.existsSync(appwriteJsonPath)) {
-      const rootAppwriteJsonPath = path.join(process.cwd(), 'appwrite.json');
-      fs.copyFileSync(appwriteJsonPath, 'appwrite.json');
-    }
-
     console.log(`Version ${version} applied successfully.`);
   }
 
   console.log('All migrations applied.');
 };
 
-async function waitForAttributes(
-  databases: Databases,
-  config: AppConfig,
-  appwriteJsonPath: string,
-) {
+async function waitForAttributes(databases: Databases, snapshotPath: string) {
   console.log('Polling attribute status...');
 
   let schema: any;
   try {
-    schema = JSON.parse(fs.readFileSync(appwriteJsonPath, 'utf8'));
+    schema = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
   } catch (e) {
-    console.error('Failed to parse appwrite.json for polling');
+    console.error('Failed to parse snapshot for attribute polling');
     return;
   }
 
-  const collections = schema.collections || [];
+  // appwrite.config.json format: tables[] with databaseId from tablesDB[]
+  const tables = schema.tables || [];
+  const tablesDB = schema.tablesDB || [];
 
-  for (const col of collections) {
-    const collectionId = col.$id;
-    // We need to check attributes for this collection.
-    // The Appwrite API allows listing attributes.
-    // We should wait until all are 'available'.
+  // Build a map of database $id -> database info
+  const dbMap = new Map<string, any>();
+  for (const db of tablesDB) {
+    dbMap.set(db.$id, db);
+  }
 
-    // This can be complex if there are many.
-    // We'll perform a simple check.
-    console.log(`Checking attributes for collection ${col.name} (${collectionId})...`);
+  for (const table of tables) {
+    const collectionId = table.$id;
+    const databaseId = table.databaseId;
+
+    if (!databaseId) {
+      console.warn(`Table ${table.name} (${collectionId}) has no databaseId. Skipping polling.`);
+      continue;
+    }
+
+    console.log(`Checking attributes for table ${table.name} (${collectionId})...`);
 
     let allAvailable = false;
     while (!allAvailable) {
-      // Use config.database (system_migrations DB) ? NO.
-      // The schema sync applies to the TARGET database.
-      // Which DB is that?
-      // "appwrite deploy collection" deploys to the project's default database usually?
-      // Or does it respect database ID in appwrite.json?
-      // appwrite.json structure usually has:
-      // "collections": [ { "$id": "...", "$databaseId": "...", ... } ]
-      // If $databaseId is present, it deploys there.
-      // If NOT, it might deploy to default?
-      // The old code used config.databaseId (which was 'default').
-      // Now config.database is 'system'.
-      // BUT waitForAttributes is checking user collections, NOT migration collection.
-      // So we should NOT use config.database here if config.database is now 'system'.
-      // We need to check the database ID defined in the collection schema or default to 'default'.
-
-      const targetDbId = col.databaseId || 'default'; // appwrite.json collections usually have databaseId
-
       try {
-        const response = await databases.listAttributes(targetDbId, collectionId);
+        const response = await databases.listAttributes(databaseId, collectionId);
         const attributes = response.attributes;
-
         const pending = attributes.filter((attr: any) => attr.status !== 'available');
 
         if (pending.length === 0) {
@@ -231,10 +197,19 @@ async function waitForAttributes(
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       } catch (e: any) {
-        console.warn(
-          `Failed to list attributes for ${collectionId} in DB ${targetDbId}: ${e.message}. Retrying...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (e.code === 500) {
+          console.warn(
+            chalk.red(
+              `  ⚠ Failed to list attributes for ${collectionId} in DB ${databaseId}: Server Error. Skipping polling for this collection.`,
+            ),
+          );
+          allAvailable = true; // Force exit loop
+        } else {
+          console.warn(
+            `Failed to list attributes for ${collectionId} in DB ${databaseId}: ${e.message}. Retrying...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
       }
     }
   }

@@ -1,23 +1,19 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import inquirer from 'inquirer';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import chalk from 'chalk';
 
-const execAsync = promisify(exec);
 import { runMigrations } from '../lib/runner.js';
 import { loadConfig } from '../lib/config.js';
-import { fetchProjectSchema } from '../lib/schema.js';
 import {
   createAppwriteClient,
   ensureMigrationCollection,
   getAppliedMigrations,
 } from '../lib/appwrite.js';
+import { configureClient, pullSnapshot, getSnapshotFilename } from '../lib/cli.js';
 
 const program = new Command();
 
@@ -80,6 +76,7 @@ migrations
   .description('Create a new migration version')
   .action(async () => {
     const migrationsDir = path.join(process.cwd(), 'appwrite', 'migration');
+    const snapshotFilename = getSnapshotFilename();
 
     // Find next version number
     const versionDirs = fs
@@ -116,66 +113,61 @@ export default migration;
 
     fs.writeFileSync(path.join(versionPath, 'index.ts'), indexContent);
 
-    // Initial Snapshot Logic (Copy or Fetch)
-    let sourceJson = path.join(process.cwd(), 'appwrite.json');
+    // Snapshot Logic: copy from previous version or from root appwrite.config.json
+    let snapshotSource: string | null = null;
+
+    // First, try the previous version's snapshot
     if (versionDirs.length > 0) {
       const lastVersionPath = path.join(
         migrationsDir,
         `v${versionDirs[versionDirs.length - 1]}`,
-        'appwrite.json',
+        snapshotFilename,
       );
       if (fs.existsSync(lastVersionPath)) {
-        sourceJson = lastVersionPath;
+        snapshotSource = lastVersionPath;
       }
     }
 
-    if (fs.existsSync(sourceJson)) {
-      fs.copyFileSync(sourceJson, path.join(versionPath, 'appwrite.json'));
-      console.log(chalk.green(`Copied snapshot from ${sourceJson}`));
+    // Fallback: root appwrite.config.json
+    if (!snapshotSource) {
+      const rootConfig = path.join(process.cwd(), snapshotFilename);
+      if (fs.existsSync(rootConfig)) {
+        snapshotSource = rootConfig;
+      }
+    }
+
+    if (snapshotSource) {
+      fs.copyFileSync(snapshotSource, path.join(versionPath, snapshotFilename));
+      console.log(chalk.green(`Copied snapshot from ${snapshotSource}`));
     } else {
-      console.log(chalk.blue('No previous snapshot found. Attempting to fetch from Appwrite...'));
-      let fetched = false;
+      // No local snapshot — pull from Appwrite via CLI
+      console.log(chalk.blue('No previous snapshot found. Pulling from Appwrite via CLI...'));
 
       try {
         const options = program.opts();
         const config = loadConfig(options.env);
-
-        if (config.endpoint && config.projectId && config.apiKey) {
-          // Use SDK to fetch schema
-          const schema = await fetchProjectSchema(config);
-
-          fs.writeFileSync(
-            path.join(versionPath, 'appwrite.json'),
-            JSON.stringify(
-              schema,
-              (key, value) => (typeof value === 'bigint' ? value.toString() : value),
-              2,
-            ),
-          );
-
-          console.log(chalk.green('Successfully fetched schema snapshot from Appwrite.'));
-          fetched = true;
-        }
+        await configureClient(config);
+        await pullSnapshot(versionPath);
+        console.log(chalk.green('Successfully pulled snapshot from Appwrite.'));
       } catch (error: any) {
-        console.warn(chalk.yellow(`Failed to fetch snapshot from Appwrite: ${error.message}`));
-        console.warn(chalk.yellow('Make sure .env is configured correctly.'));
-      }
+        console.error(chalk.red(`Failed to pull snapshot: ${error.message}`));
+        console.warn(chalk.yellow('Creating empty snapshot placeholder.'));
 
-      if (!fetched) {
-        console.warn(chalk.yellow('Warning: Could not fetch real snapshot.'));
-        console.warn(chalk.yellow('Generating a default empty appwrite.json for this migration.'));
-
-        const defaultSnapshot = {
-          projectId: 'YOUR_PROJECT_ID',
-          projectName: 'YOUR_PROJECT_NAME',
-          collections: [],
+        const emptySnapshot = {
+          projectId: '',
+          projectName: '',
+          settings: {},
+          tablesDB: [],
+          tables: [],
+          buckets: [],
+          teams: [],
+          topics: [],
         };
 
         fs.writeFileSync(
-          path.join(versionPath, 'appwrite.json'),
-          JSON.stringify(defaultSnapshot, null, 2),
+          path.join(versionPath, snapshotFilename),
+          JSON.stringify(emptySnapshot, null, 2),
         );
-        console.log(chalk.green('Created default appwrite.json snapshot.'));
       }
     }
 
@@ -184,7 +176,7 @@ export default migration;
 
 migrations
   .command('update <version>')
-  .description('Update appwrite.json for a version with current schema dump')
+  .description('Update snapshot for a version by pulling current state from Appwrite via CLI')
   .action(async (version) => {
     const migrationsDir = path.join(process.cwd(), 'appwrite', 'migration');
     const versionPath = path.join(migrationsDir, version);
@@ -194,33 +186,18 @@ migrations
       process.exit(1);
     }
 
-    console.log(chalk.blue(`Updating snapshot for ${version}...`));
+    console.log(chalk.blue(`Updating snapshot for ${version} via CLI pull...`));
 
     try {
       const options = program.opts();
       const config = loadConfig(options.env);
 
-      if (config.endpoint && config.projectId && config.apiKey) {
-        const schema = await fetchProjectSchema(config);
+      await configureClient(config);
+      await pullSnapshot(versionPath);
 
-        fs.writeFileSync(
-          path.join(versionPath, 'appwrite.json'),
-          JSON.stringify(
-            schema,
-            (key, value) => (typeof value === 'bigint' ? value.toString() : value),
-            2,
-          ),
-        );
-        console.log(chalk.green(`Successfully updated appwrite.json for ${version}`));
-      } else {
-        throw new Error('Missing environment variables');
-      }
+      console.log(chalk.green(`Successfully updated snapshot for ${version}`));
     } catch (error: any) {
       console.error(chalk.red(`Failed to update snapshot: ${error.message}`));
-      if (error.response) {
-        console.error(chalk.red('Server Response:'), JSON.stringify(error.response, null, 2));
-      }
-      console.error(error);
       process.exit(1);
     }
   });
@@ -264,16 +241,8 @@ migrations
 
       console.log(chalk.bold.underline('\nMigration Status:\n'));
 
-      // We can't easily get the ID without reading the file, which might be slow if many.
-      // But for status we should probably read them.
-      // Or we can just list folders and assume order?
-      // Requirement: "Lista o histórico de migrações aplicadas no banco vs arquivos locais."
-
       for (const version of versionDirs) {
-        const indexPath = path.join(migrationsDir, version, 'index.ts'); // or .js
-        // skipping full load for speed might be better but we need ID to match.
-        // Regex?
-        // Let's try to match ID from file content with regex to avoid executing code
+        const indexPath = path.join(migrationsDir, version, 'index.ts');
         let id = 'unknown';
         if (fs.existsSync(indexPath)) {
           const content = fs.readFileSync(indexPath, 'utf8');
