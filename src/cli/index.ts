@@ -14,8 +14,38 @@ import {
   getAppliedMigrations,
 } from '../lib/appwrite.js';
 import { configureClient, pullSnapshot, getSnapshotFilename } from '../lib/cli.js';
+import { generateSchemaDoc } from '../lib/diagram.js';
 
 const program = new Command();
+
+const generateDocs = (version?: string, outputDir?: string): void => {
+  const migrationsDir = path.join(process.cwd(), 'appwrite', 'migration');
+  const snapshotFilename = getSnapshotFilename();
+
+  if (!fs.existsSync(migrationsDir)) return;
+
+  // Resolve version: use provided or find latest
+  if (!version) {
+    const versionDirs = fs
+      .readdirSync(migrationsDir)
+      .filter(
+        (dir) => dir.startsWith('v') && fs.statSync(path.join(migrationsDir, dir)).isDirectory(),
+      )
+      .map((d) => parseInt(d.substring(1)))
+      .sort((a, b) => a - b);
+
+    if (versionDirs.length === 0) return;
+    version = `v${versionDirs[versionDirs.length - 1]}`;
+  }
+
+  const snapshotPath = path.join(migrationsDir, version, snapshotFilename);
+  if (!fs.existsSync(snapshotPath)) return;
+
+  const markdown = generateSchemaDoc(snapshotPath, version);
+  const outputPath = path.join(outputDir ?? path.join(process.cwd(), 'appwrite'), 'schema.md');
+  fs.writeFileSync(outputPath, markdown);
+  console.log(chalk.green(`Schema docs updated at ${outputPath}`));
+};
 
 program
   .name('appwrite-ctl')
@@ -176,6 +206,8 @@ export default migration;
     }
 
     console.log(chalk.green(`Created migration v${nextVersion} at ${versionPath}`));
+
+    generateDocs(`v${nextVersion}`, versionPath);
   });
 
 migrations
@@ -200,6 +232,8 @@ migrations
       await pullSnapshot(versionPath);
 
       console.log(chalk.green(`Successfully updated snapshot for ${version}`));
+
+      generateDocs(version, versionPath);
     } catch (error: any) {
       console.error(chalk.red(`Failed to update snapshot: ${error.message}`));
       process.exit(1);
@@ -260,6 +294,18 @@ migrations
       console.log('');
     } catch (error: any) {
       console.error(chalk.red('Status check failed:'), error.message);
+      process.exit(1);
+    }
+  });
+
+migrations
+  .command('docs [version]')
+  .description('Generate schema documentation with ER diagrams from a migration snapshot')
+  .action(async (version?: string) => {
+    try {
+      generateDocs(version);
+    } catch (error: any) {
+      console.error(chalk.red('Docs generation failed:'), error.message);
       process.exit(1);
     }
   });
