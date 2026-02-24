@@ -205,14 +205,14 @@ Generates a Markdown file with:
 
 ## CLI Commands
 
-| Command                       | Description                                                   |
-| :---------------------------- | :------------------------------------------------------------ |
-| `init`                        | Initialize the project folder structure and config.           |
-| `migrations setup`            | Create the `system` database and `migrations` collection.     |
-| `migrations create`           | Create a new migration version with snapshot.                 |
-| `migrations update <version>` | Update a version's snapshot by pulling from Appwrite via CLI. |
-| `migrations run`              | Execute all pending migrations in order.                      |
-| `migrations status`           | List applied and pending migrations.                          |
+| Command                       | Description                                                                          |
+| :---------------------------- | :----------------------------------------------------------------------------------- |
+| `init`                        | Initialize the project folder structure and config.                                  |
+| `migrations setup`            | Create the `system` database and `migrations` collection.                            |
+| `migrations create`           | Create a new migration version with snapshot.                                        |
+| `migrations update <version>` | Update a version's snapshot by pulling from Appwrite via CLI.                        |
+| `migrations run`              | Execute all pending migrations in order.                                             |
+| `migrations status`           | List applied and pending migrations.                                                 |
 | `migrations docs`             | Pull current schema state from Appwrite and generate documentation with ER diagrams. |
 
 # AI Rules
@@ -245,13 +245,13 @@ It contains:
 
 This project uses `appwrite-ctl` to manage schema migrations. The available commands are:
 
-| Command                                  | Description                                                        |
-| :--------------------------------------- | :----------------------------------------------------------------- |
-| `appwrite-ctl migrations create`         | Create a new migration version with a snapshot copied from the previous version. |
-| `appwrite-ctl migrations update <version>` | Pull the current Appwrite state and update a version's snapshot. |
-| `appwrite-ctl migrations run`            | Execute all pending migrations in order (push schema → poll attributes → run script). |
-| `appwrite-ctl migrations status`         | List applied and pending migrations.                               |
-| `appwrite-ctl migrations docs`           | Pull current schema state from Appwrite and generate/regenerate `schema.md`. |
+| Command                                    | Description                                                                           |
+| :----------------------------------------- | :------------------------------------------------------------------------------------ |
+| `appwrite-ctl migrations create`           | Create a new migration version with a snapshot copied from the previous version.      |
+| `appwrite-ctl migrations update <version>` | Pull the current Appwrite state and update a version's snapshot.                      |
+| `appwrite-ctl migrations run`              | Execute all pending migrations in order (push schema → poll attributes → run script). |
+| `appwrite-ctl migrations status`           | List applied and pending migrations.                                                  |
+| `appwrite-ctl migrations docs`             | Pull current schema state from Appwrite and generate/regenerate `schema.md`.          |
 
 Each migration version lives in `appwrite/migration/vN/` and contains:
 
@@ -264,9 +264,11 @@ Each migration version lives in `appwrite/migration/vN/` and contains:
 When a change to the data model is needed (e.g. adding a collection, modifying attributes, creating indexes), follow these steps:
 
 1. **Create a new migration version:**
+
    ```bash
    npx appwrite-ctl migrations create
    ```
+
    This creates `appwrite/migration/vN/` with a copy of the previous version's snapshot.
 
 2. **Edit the snapshot (`appwrite.config.json`)** inside the new version folder. Apply the desired schema changes directly to this JSON file — add/remove/modify collections, attributes, indexes, relationships, or buckets.
@@ -274,9 +276,11 @@ When a change to the data model is needed (e.g. adding a collection, modifying a
 3. **Write the migration script** in `appwrite/migration/vN/index.ts` if data manipulation is needed (e.g. seeding data, transforming existing documents). If the change is schema-only, the default empty `up` function is sufficient.
 
 4. **Regenerate the schema docs:**
+
    ```bash
    npx appwrite-ctl migrations docs
    ```
+
    This updates both `appwrite/migration/vN/schema.md` and the root `appwrite/schema.md`.
 
 5. **Verify** the updated `appwrite/schema.md` to confirm the changes are correct.

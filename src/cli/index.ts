@@ -193,7 +193,11 @@ export default migration;
     console.log(chalk.green(`Created migration v${nextVersion} at ${versionPath}`));
 
     generateDocs(path.join(versionPath, snapshotFilename), `v${nextVersion}`, versionPath);
-    generateDocs(path.join(versionPath, snapshotFilename), `v${nextVersion}`, path.join(process.cwd(), 'appwrite'));
+    generateDocs(
+      path.join(versionPath, snapshotFilename),
+      `v${nextVersion}`,
+      path.join(process.cwd(), 'appwrite'),
+    );
   });
 
 migrations
@@ -288,7 +292,9 @@ migrations
 
 migrations
   .command('docs')
-  .description('Pull current state from Appwrite and generate schema documentation with ER diagrams')
+  .description(
+    'Pull current state from Appwrite and generate schema documentation with ER diagrams',
+  )
   .action(async () => {
     try {
       const options = program.opts();
@@ -302,6 +308,11 @@ migrations
       console.log(chalk.blue('Generating documentation...'));
       const appwriteDir = path.join(process.cwd(), 'appwrite');
       generateDocs(snapshotPath, 'latest', appwriteDir);
+
+      // Cleanup the temporary snapshot pulled to root
+      if (fs.existsSync(snapshotPath)) {
+        fs.unlinkSync(snapshotPath);
+      }
     } catch (error: any) {
       console.error(chalk.red('Docs generation failed:'), error.message);
       process.exit(1);

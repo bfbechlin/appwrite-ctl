@@ -57,7 +57,7 @@ export const pullSnapshot = async (targetDir?: string): Promise<string> => {
   if (!fs.existsSync(rootConfig)) {
     throw new Error(
       `appwrite.config.json not found at project root after pull. ` +
-      `Ensure the CLI is configured correctly.`,
+        `Ensure the CLI is configured correctly.`,
     );
   }
 
