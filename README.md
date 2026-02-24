@@ -209,7 +209,7 @@ Generates a Markdown file with:
 | :---------------------------- | :----------------------------------------------------------------------------------- |
 | `init`                        | Initialize the project folder structure and config.                                  |
 | `migrations setup`            | Create the `system` database and `migrations` collection.                            |
-| `migrations create`           | Create a new migration version with snapshot.                                        |
+| `migrations create`           | Create a new migration version pulling the latest snapshot from Appwrite via CLI.    |
 | `migrations update <version>` | Update a version's snapshot by pulling from Appwrite via CLI.                        |
 | `migrations run`              | Execute all pending migrations in order.                                             |
 | `migrations status`           | List applied and pending migrations.                                                 |
@@ -247,7 +247,7 @@ This project uses `appwrite-ctl` to manage schema migrations. The available comm
 
 | Command                                    | Description                                                                           |
 | :----------------------------------------- | :------------------------------------------------------------------------------------ |
-| `appwrite-ctl migrations create`           | Create a new migration version with a snapshot copied from the previous version.      |
+| `appwrite-ctl migrations create`           | Create a new migration version pulling the latest snapshot from Appwrite via CLI.     |
 | `appwrite-ctl migrations update <version>` | Pull the current Appwrite state and update a version's snapshot.                      |
 | `appwrite-ctl migrations run`              | Execute all pending migrations in order (push schema → poll attributes → run script). |
 | `appwrite-ctl migrations status`           | List applied and pending migrations.                                                  |
@@ -269,7 +269,7 @@ When a change to the data model is needed (e.g. adding a collection, modifying a
    npx appwrite-ctl migrations create
    ```
 
-   This creates `appwrite/migration/vN/` with a copy of the previous version's snapshot.
+   This creates `appwrite/migration/vN/` and automatically pulls the current schema snapshot from Appwrite into `appwrite.config.json` via the CLI.
 
 2. **Edit the snapshot (`appwrite.config.json`)** inside the new version folder. Apply the desired schema changes directly to this JSON file — add/remove/modify collections, attributes, indexes, relationships, or buckets.
 

@@ -132,62 +132,34 @@ export default migration;
 
     fs.writeFileSync(path.join(versionPath, 'index.ts'), indexContent);
 
-    // Snapshot logic: copy from previous version or from root appwrite.config.json.
-    let snapshotSource: string | null = null;
+    // Snapshot logic: always pull from Appwrite via CLI for a new migration.
+    console.log(chalk.blue('Pulling latest schema from Appwrite via CLI...'));
 
-    // First, try the previous version's snapshot.
-    if (versionDirs.length > 0) {
-      const lastVersionPath = path.join(
-        migrationsDir,
-        `v${versionDirs[versionDirs.length - 1]}`,
-        snapshotFilename,
+    try {
+      const options = program.opts();
+      const config = loadConfig(options.env);
+      await configureClient(config);
+      await pullSnapshot(versionPath);
+      console.log(chalk.green('Successfully pulled snapshot from Appwrite.'));
+    } catch (error: any) {
+      console.error(chalk.red(`Failed to pull snapshot: ${error.message}`));
+      console.warn(chalk.yellow('Creating empty snapshot placeholder.'));
+
+      const emptySnapshot = {
+        projectId: '',
+        projectName: '',
+        settings: {},
+        tablesDB: [],
+        tables: [],
+        buckets: [],
+        teams: [],
+        topics: [],
+      };
+
+      fs.writeFileSync(
+        path.join(versionPath, snapshotFilename),
+        JSON.stringify(emptySnapshot, null, 2),
       );
-      if (fs.existsSync(lastVersionPath)) {
-        snapshotSource = lastVersionPath;
-      }
-    }
-
-    // Fallback: root appwrite.config.json.
-    if (!snapshotSource) {
-      const rootConfig = path.join(process.cwd(), snapshotFilename);
-      if (fs.existsSync(rootConfig)) {
-        snapshotSource = rootConfig;
-      }
-    }
-
-    if (snapshotSource) {
-      fs.copyFileSync(snapshotSource, path.join(versionPath, snapshotFilename));
-      console.log(chalk.green(`Copied snapshot from ${snapshotSource}`));
-    } else {
-      // No local snapshot - pull from Appwrite via CLI.
-      console.log(chalk.blue('No previous snapshot found. Pulling from Appwrite via CLI...'));
-
-      try {
-        const options = program.opts();
-        const config = loadConfig(options.env);
-        await configureClient(config);
-        await pullSnapshot(versionPath);
-        console.log(chalk.green('Successfully pulled snapshot from Appwrite.'));
-      } catch (error: any) {
-        console.error(chalk.red(`Failed to pull snapshot: ${error.message}`));
-        console.warn(chalk.yellow('Creating empty snapshot placeholder.'));
-
-        const emptySnapshot = {
-          projectId: '',
-          projectName: '',
-          settings: {},
-          tablesDB: [],
-          tables: [],
-          buckets: [],
-          teams: [],
-          topics: [],
-        };
-
-        fs.writeFileSync(
-          path.join(versionPath, snapshotFilename),
-          JSON.stringify(emptySnapshot, null, 2),
-        );
-      }
     }
 
     console.log(chalk.green(`Created migration v${nextVersion} at ${versionPath}`));
