@@ -215,6 +215,70 @@ Generates a Markdown file with:
 | `migrations status`           | List applied and pending migrations.                          |
 | `migrations docs [version]`   | Generate schema documentation with ER diagrams.              |
 
-## License
+# AI Rules
 
-ISC
+## Understanding the Data Models Layer
+
+📌 `schema.md` — The Source of Truth
+
+The most important file for understanding the application's **data model** is:
+
+```
+appwrite/schema.md
+```
+
+This is an **auto-generated** Markdown file that documents the **current state** of every database, collection, attribute, relationship, index, and storage bucket in the Appwrite project. It is generated from the latest `appwrite.config.json` snapshot via the `migrations docs` command.
+
+**When you need to understand the data model — always read `appwrite/schema.md` first.**
+
+It contains:
+
+- **ER Diagrams** (Mermaid) — visual representation of collection relationships per database.
+- **Collections** — complete list of every collection with:
+  - Column names, types, required flags, defaults, and constraints.
+  - Relationships: type (`oneToMany`, `manyToOne`, etc.), related collection, on-delete behavior, and two-way configuration.
+  - Indexes: type (unique, key, fulltext), columns, and sort orders.
+  - Permissions: read/write/create/delete access rules.
+- **Buckets** — storage buckets with max file size, extensions, compression, encryption, and antivirus settings.
+
+## Migration Commands
+
+This project uses `appwrite-ctl` to manage schema migrations. The available commands are:
+
+| Command                                  | Description                                                        |
+| :--------------------------------------- | :----------------------------------------------------------------- |
+| `appwrite-ctl migrations create`         | Create a new migration version with a snapshot copied from the previous version. |
+| `appwrite-ctl migrations update <version>` | Pull the current Appwrite state and update a version's snapshot. |
+| `appwrite-ctl migrations run`            | Execute all pending migrations in order (push schema → poll attributes → run script). |
+| `appwrite-ctl migrations status`         | List applied and pending migrations.                               |
+| `appwrite-ctl migrations docs [version]` | Generate/regenerate `schema.md` from a snapshot.                   |
+
+Each migration version lives in `appwrite/migration/vN/` and contains:
+
+- **`appwrite.config.json`** — the schema snapshot (Appwrite CLI format).
+- **`index.ts`** — the migration script with `up` (and optional `down`) functions.
+- **`schema.md`** — auto-generated docs for that version's snapshot.
+
+## How to Handle Data Model Changes
+
+When a change to the data model is needed (e.g. adding a collection, modifying attributes, creating indexes), follow these steps:
+
+1. **Create a new migration version:**
+   ```bash
+   npx appwrite-ctl migrations create
+   ```
+   This creates `appwrite/migration/vN/` with a copy of the previous version's snapshot.
+
+2. **Edit the snapshot (`appwrite.config.json`)** inside the new version folder. Apply the desired schema changes directly to this JSON file — add/remove/modify collections, attributes, indexes, relationships, or buckets.
+
+3. **Write the migration script** in `appwrite/migration/vN/index.ts` if data manipulation is needed (e.g. seeding data, transforming existing documents). If the change is schema-only, the default empty `up` function is sufficient.
+
+4. **Regenerate the schema docs:**
+   ```bash
+   npx appwrite-ctl migrations docs
+   ```
+   This updates both `appwrite/migration/vN/schema.md` and the root `appwrite/schema.md`.
+
+5. **Verify** the updated `appwrite/schema.md` to confirm the changes are correct.
+
+> ⚠️ **Never edit `schema.md` files manually** — they are auto-generated. Always modify the `appwrite.config.json` snapshot and run `migrations docs` to regenerate.
