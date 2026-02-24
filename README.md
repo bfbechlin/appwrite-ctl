@@ -213,7 +213,7 @@ Generates a Markdown file with:
 | `migrations update <version>` | Update a version's snapshot by pulling from Appwrite via CLI. |
 | `migrations run`              | Execute all pending migrations in order.                      |
 | `migrations status`           | List applied and pending migrations.                          |
-| `migrations docs [version]`   | Generate schema documentation with ER diagrams.              |
+| `migrations docs`             | Pull current schema state from Appwrite and generate documentation with ER diagrams. |
 
 # AI Rules
 
@@ -251,7 +251,7 @@ This project uses `appwrite-ctl` to manage schema migrations. The available comm
 | `appwrite-ctl migrations update <version>` | Pull the current Appwrite state and update a version's snapshot. |
 | `appwrite-ctl migrations run`            | Execute all pending migrations in order (push schema → poll attributes → run script). |
 | `appwrite-ctl migrations status`         | List applied and pending migrations.                               |
-| `appwrite-ctl migrations docs [version]` | Generate/regenerate `schema.md` from a snapshot.                   |
+| `appwrite-ctl migrations docs`           | Pull current schema state from Appwrite and generate/regenerate `schema.md`. |
 
 Each migration version lives in `appwrite/migration/vN/` and contains:
 

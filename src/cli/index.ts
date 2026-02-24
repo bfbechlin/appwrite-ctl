@@ -18,31 +18,16 @@ import { generateSchemaDoc } from '../lib/diagram.js';
 
 const program = new Command();
 
-const generateDocs = (version?: string, outputDir?: string): void => {
-  const migrationsDir = path.join(process.cwd(), 'appwrite', 'migration');
-  const snapshotFilename = getSnapshotFilename();
-
-  if (!fs.existsSync(migrationsDir)) return;
-
-  // Resolve version: use provided or find latest
-  if (!version) {
-    const versionDirs = fs
-      .readdirSync(migrationsDir)
-      .filter(
-        (dir) => dir.startsWith('v') && fs.statSync(path.join(migrationsDir, dir)).isDirectory(),
-      )
-      .map((d) => parseInt(d.substring(1)))
-      .sort((a, b) => a - b);
-
-    if (versionDirs.length === 0) return;
-    version = `v${versionDirs[versionDirs.length - 1]}`;
-  }
-
-  const snapshotPath = path.join(migrationsDir, version, snapshotFilename);
+const generateDocs = (snapshotPath: string, version: string, outputDir: string): void => {
   if (!fs.existsSync(snapshotPath)) return;
 
   const markdown = generateSchemaDoc(snapshotPath, version);
-  const outputPath = path.join(outputDir ?? path.join(process.cwd(), 'appwrite'), 'schema.md');
+
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  const outputPath = path.join(outputDir, 'schema.md');
   fs.writeFileSync(outputPath, markdown);
   console.log(chalk.green(`Schema docs updated at ${outputPath}`));
 };
@@ -207,7 +192,8 @@ export default migration;
 
     console.log(chalk.green(`Created migration v${nextVersion} at ${versionPath}`));
 
-    generateDocs(`v${nextVersion}`, versionPath);
+    generateDocs(path.join(versionPath, snapshotFilename), `v${nextVersion}`, versionPath);
+    generateDocs(path.join(versionPath, snapshotFilename), `v${nextVersion}`, path.join(process.cwd(), 'appwrite'));
   });
 
 migrations
@@ -233,7 +219,9 @@ migrations
 
       console.log(chalk.green(`Successfully updated snapshot for ${version}`));
 
-      generateDocs(version, versionPath);
+      const snapshotFilename = getSnapshotFilename();
+      generateDocs(path.join(versionPath, snapshotFilename), version, versionPath);
+      console.log(chalk.green(`Successfully updated schema.md for ${version}`));
     } catch (error: any) {
       console.error(chalk.red(`Failed to update snapshot: ${error.message}`));
       process.exit(1);
@@ -299,11 +287,21 @@ migrations
   });
 
 migrations
-  .command('docs [version]')
-  .description('Generate schema documentation with ER diagrams from a migration snapshot')
-  .action(async (version?: string) => {
+  .command('docs')
+  .description('Pull current state from Appwrite and generate schema documentation with ER diagrams')
+  .action(async () => {
     try {
-      generateDocs(version);
+      const options = program.opts();
+      const config = loadConfig(options.env);
+
+      console.log(chalk.blue(`Pulling latest schema from Appwrite to project root...`));
+      await configureClient(config);
+
+      const snapshotPath = await pullSnapshot();
+
+      console.log(chalk.blue('Generating documentation...'));
+      const appwriteDir = path.join(process.cwd(), 'appwrite');
+      generateDocs(snapshotPath, 'latest', appwriteDir);
     } catch (error: any) {
       console.error(chalk.red('Docs generation failed:'), error.message);
       process.exit(1);

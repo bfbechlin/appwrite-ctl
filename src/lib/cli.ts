@@ -37,10 +37,10 @@ const RESOURCES = ['tables', 'buckets', 'teams', 'topics'];
  * Pull a full snapshot from Appwrite into a target directory.
  * Uses individual `appwrite pull <resource>` commands for non-interactive operation.
  *
- * The operation works in the project root (where appwrite.config.json lives),
- * then copies the resulting file to the target directory.
+ * The operation works in the project root (where appwrite.config.json lives).
+ * If a targetDir is provided, it copies the resulting file to the target directory and cleans up the root.
  */
-export const pullSnapshot = async (targetDir: string): Promise<string> => {
+export const pullSnapshot = async (targetDir?: string): Promise<string> => {
   const rootDir = process.cwd();
   const rootConfig = path.join(rootDir, SNAPSHOT_FILENAME);
 
@@ -57,21 +57,25 @@ export const pullSnapshot = async (targetDir: string): Promise<string> => {
   if (!fs.existsSync(rootConfig)) {
     throw new Error(
       `appwrite.config.json not found at project root after pull. ` +
-        `Ensure the CLI is configured correctly.`,
+      `Ensure the CLI is configured correctly.`,
     );
   }
 
-  // Copy the updated root config into the target version directory
-  const targetPath = path.join(targetDir, SNAPSHOT_FILENAME);
-  fs.copyFileSync(rootConfig, targetPath);
-  console.log(chalk.green(`Snapshot saved to ${targetPath}`));
+  if (targetDir && targetDir !== rootDir) {
+    // Copy the updated root config into the target version directory
+    const targetPath = path.join(targetDir, SNAPSHOT_FILENAME);
+    fs.copyFileSync(rootConfig, targetPath);
+    console.log(chalk.green(`Snapshot saved to ${targetPath}`));
 
-  // Cleanup: Remove the root appwrite.config.json created by the pull command.
-  if (fs.existsSync(rootConfig)) {
-    fs.unlinkSync(rootConfig);
+    // Cleanup: Remove the root appwrite.config.json created by the pull command.
+    if (fs.existsSync(rootConfig)) {
+      fs.unlinkSync(rootConfig);
+    }
+    return targetPath;
   }
 
-  return targetPath;
+  console.log(chalk.green(`Snapshot saved to ${rootConfig}`));
+  return rootConfig;
 };
 
 /**
