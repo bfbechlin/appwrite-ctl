@@ -1,11 +1,15 @@
 {
   "name": "appwrite-ctl",
   "version": "1.0.0",
-  "description": "",
+  "description": "Appwrite infrastructure as code and migration CLI tool.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bfbechlin/appwrite-ctl.git"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "appwrite-ctl": "./dist/cli/index.js"
+    "appwrite-ctl": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -19,8 +23,14 @@
   "files": [
     "dist"
   ],
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "appwrite",
+    "migration",
+    "cli",
+    "schema",
+    "iac"
+  ],
+  "author": "Béuren Bechlin <beuren.bechlin@gmail.com>",
   "license": "ISC",
   "type": "module",
   "dependencies": {
