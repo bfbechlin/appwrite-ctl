@@ -242,18 +242,33 @@ const buildBucketsDoc = (buckets: Bucket[]): string => {
 
   const lines: string[] = [];
   lines.push('## Buckets');
-  lines.push('');
-  lines.push(
-    '| Name | ID | Max Size | Extensions | Compression | Encryption | Antivirus | Enabled |',
-  );
-  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
 
   for (const b of buckets) {
     const extensions =
       b.allowedFileExtensions.length > 0 ? b.allowedFileExtensions.join(', ') : 'any';
+    const status = b.enabled ? '🟢 Enabled' : '🔴 Disabled';
+
+    lines.push('');
+    lines.push(`### ${b.name} (\`${b.$id}\`)`);
+    lines.push('');
+    lines.push(`- **Status:** ${status}`);
+    lines.push('');
+    lines.push('| Max Size | Extensions | Compression | Encryption | Antivirus | File Security |');
+    lines.push('| --- | --- | --- | --- | --- | --- |');
     lines.push(
-      `| ${b.name} | \`${b.$id}\` | ${formatFileSize(b.maximumFileSize)} | ${extensions} | ${b.compression} | ${b.encryption ? '✅' : '—'} | ${b.antivirus ? '✅' : '—'} | ${b.enabled ? '✅' : '—'} |`,
+      `| ${formatFileSize(b.maximumFileSize)} | ${extensions} | ${b.compression} | ${b.encryption ? '✅' : '—'} | ${b.antivirus ? '✅' : '—'} | ${b.fileSecurity ? 'Yes' : 'No'} |`,
     );
+
+    if (b.$permissions.length > 0) {
+      lines.push('');
+      lines.push('**Permissions:**');
+      lines.push('');
+      lines.push('| Permission |');
+      lines.push('| --- |');
+      for (const perm of b.$permissions) {
+        lines.push(`| \`${perm}\` |`);
+      }
+    }
   }
 
   return lines.join('\n');

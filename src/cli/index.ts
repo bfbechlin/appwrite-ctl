@@ -263,7 +263,7 @@ migrations
   });
 
 migrations
-  .command('docs')
+  .command('docs [version]')
   .description(
     'Pull current state from Appwrite and generate schema documentation with ER diagrams',
   )
