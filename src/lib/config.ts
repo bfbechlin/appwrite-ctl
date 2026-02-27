@@ -8,7 +8,6 @@ export interface AppConfig {
   apiKey: string;
   migrationCollectionId: string;
   database: string;
-  backupCommand?: string;
 }
 
 /**
@@ -18,10 +17,10 @@ export const loadConfig = (envPath: string = '.env'): AppConfig => {
   // Load environment variables.
   dotenv.config({ path: path.resolve(process.cwd(), envPath), override: true });
 
-  const endpoint = process.env.APPWRITE_ENDPOINT;
-  const projectId = process.env.APPWRITE_PROJECT_ID;
-  const apiKey = process.env.APPWRITE_API_KEY;
-  const backupCommand = process.env.BACKUP_COMMAND;
+  // Trim values to avoid copy-paste whitespace bugs in .env files.
+  const endpoint = process.env.APPWRITE_ENDPOINT?.trim();
+  const projectId = process.env.APPWRITE_PROJECT_ID?.trim();
+  const apiKey = process.env.APPWRITE_API_KEY?.trim();
 
   if (!endpoint || !projectId || !apiKey) {
     throw new Error(
@@ -29,9 +28,19 @@ export const loadConfig = (envPath: string = '.env'): AppConfig => {
     );
   }
 
+  // Validate endpoint is a well-formed http(s) URL to prevent SSRF via misconfiguration.
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error('APPWRITE_ENDPOINT must use http or https protocol.');
+    }
+  } catch {
+    throw new Error(`APPWRITE_ENDPOINT is not a valid URL: "${endpoint}"`);
+  }
+
   // Find root directory.
   const rootDir = process.cwd();
-  const configPath = path.join(rootDir, 'appwrite', 'migration', 'config.json');
+  const configPath = path.join(rootDir, 'appwrite', 'appwrite-ctl.config.json');
 
   let migrationCollectionId = 'migrations';
   let database = 'system';
@@ -48,8 +57,8 @@ export const loadConfig = (envPath: string = '.env'): AppConfig => {
         // Backward compatibility.
         database = fileConfig.databaseId;
       }
-    } catch (error) {
-      console.warn('Could not parse config.json, using defaults.');
+    } catch {
+      console.warn('Could not parse appwrite-ctl.config.json, using defaults.');
     }
   }
 
@@ -59,6 +68,5 @@ export const loadConfig = (envPath: string = '.env'): AppConfig => {
     apiKey,
     migrationCollectionId,
     database,
-    backupCommand,
   };
 };

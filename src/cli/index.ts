@@ -15,6 +15,12 @@ import {
 } from '../lib/appwrite.js';
 import { configureClient, pullSnapshot, getSnapshotFilename } from '../lib/cli.js';
 import { generateSchemaDoc } from '../lib/diagram.js';
+import {
+  loadSecurityLedger,
+  saveSecurityLedger,
+  resolveAuthor,
+  DEFAULT_RULES,
+} from '../lib/security.js';
 
 const program = new Command();
 
@@ -27,9 +33,9 @@ const generateDocs = (snapshotPath: string, version: string, outputDir: string):
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const outputPath = path.join(outputDir, 'schema.md');
+  const outputPath = path.join(outputDir, 'docs.md');
   fs.writeFileSync(outputPath, markdown);
-  console.log(chalk.green(`Schema docs updated at ${outputPath}`));
+  console.log(chalk.green(`Docs updated at ${outputPath}`));
 };
 
 program
@@ -45,20 +51,24 @@ program
     const rootDir = process.cwd();
     const appwriteDir = path.join(rootDir, 'appwrite');
     const migrationDir = path.join(appwriteDir, 'migration');
-    const configPath = path.join(migrationDir, 'config.json');
+    const ctlConfigPath = path.join(appwriteDir, 'appwrite-ctl.config.json');
 
     if (!fs.existsSync(appwriteDir)) fs.mkdirSync(appwriteDir);
     if (!fs.existsSync(migrationDir)) fs.mkdirSync(migrationDir);
 
-    if (!fs.existsSync(configPath)) {
+    if (!fs.existsSync(ctlConfigPath)) {
       const config = {
         collection: 'migrations',
         database: 'system',
+        security: {
+          rules: DEFAULT_RULES,
+          exceptions: {},
+        },
       };
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-      console.log(chalk.green('Created appwrite/migration/config.json'));
+      fs.writeFileSync(ctlConfigPath, JSON.stringify(config, null, 2) + '\n');
+      console.log(chalk.green('Created appwrite/appwrite-ctl.config.json'));
     } else {
-      console.log(chalk.yellow('Config file already exists.'));
+      console.log(chalk.yellow('appwrite-ctl.config.json already exists — not overwritten.'));
     }
 
     console.log(chalk.green('Initialization complete.'));
@@ -117,7 +127,6 @@ migrations
 const migration: Migration = {
   id: "${uuidv4()}",
   description: "${name}",
-  requiresBackup: false,
   up: async ({ client, databases, log, error }) => {
     log("Executing up migration for ${name}");
     // Write your migration logic here
@@ -197,7 +206,7 @@ migrations
 
       const snapshotFilename = getSnapshotFilename();
       generateDocs(path.join(versionPath, snapshotFilename), version, versionPath);
-      console.log(chalk.green(`Successfully updated schema.md for ${version}`));
+      console.log(chalk.green(`Successfully updated docs.md for ${version}`));
     } catch (error: any) {
       console.error(chalk.red(`Failed to update snapshot: ${error.message}`));
       process.exit(1);
@@ -262,32 +271,165 @@ migrations
     }
   });
 
-migrations
+program
   .command('docs [version]')
   .description(
-    'Pull current state from Appwrite and generate schema documentation with ER diagrams',
+    'Generate schema documentation with ER diagrams. Optionally pass a version (e.g. v1) to ' +
+      'generate docs from a stored snapshot instead of pulling from Appwrite.',
   )
-  .action(async () => {
+  .action(async (version?: string) => {
     try {
       const options = program.opts();
-      const config = loadConfig(options.env);
-
-      console.log(chalk.blue(`Pulling latest schema from Appwrite to project root...`));
-      await configureClient(config);
-
-      const snapshotPath = await pullSnapshot();
-
-      console.log(chalk.blue('Generating documentation...'));
       const appwriteDir = path.join(process.cwd(), 'appwrite');
-      generateDocs(snapshotPath, 'latest', appwriteDir);
 
-      // Cleanup the temporary snapshot pulled to root
-      if (fs.existsSync(snapshotPath)) {
-        fs.unlinkSync(snapshotPath);
+      if (version) {
+        // Use stored snapshot for the given version without hitting Appwrite.
+        const versionPath = path.join(appwriteDir, 'migration', version);
+        if (!fs.existsSync(versionPath)) {
+          console.error(chalk.red(`Version directory '${version}' not found.`));
+          process.exit(1);
+        }
+        const snapshotFilename = getSnapshotFilename();
+        const snapshotPath = path.join(versionPath, snapshotFilename);
+        if (!fs.existsSync(snapshotPath)) {
+          console.error(chalk.red(`No snapshot found for ${version}.`));
+          process.exit(1);
+        }
+        console.log(chalk.blue(`Generating docs from stored snapshot for ${version}...`));
+        generateDocs(snapshotPath, version, appwriteDir);
+        generateDocs(snapshotPath, version, versionPath);
+      } else {
+        const config = loadConfig(options.env);
+
+        console.log(chalk.blue(`Pulling latest schema from Appwrite to project root...`));
+        await configureClient(config);
+
+        const snapshotPath = await pullSnapshot();
+
+        console.log(chalk.blue('Generating documentation...'));
+        generateDocs(snapshotPath, 'latest', appwriteDir);
+
+        // Cleanup the temporary snapshot pulled to root
+        if (fs.existsSync(snapshotPath)) {
+          fs.unlinkSync(snapshotPath);
+        }
       }
     } catch (error: any) {
       console.error(chalk.red('Docs generation failed:'), error.message);
       process.exit(1);
+    }
+  });
+
+const RESOURCE_TYPES = ['Collection', 'Bucket'] as const;
+type ResourceType = (typeof RESOURCE_TYPES)[number];
+
+const exceptions = program
+  .command('exceptions')
+  .description('Manage security exception entries in security.json');
+
+exceptions
+  .command('add')
+  .description('Interactively add a new security exception entry to appwrite/security.json')
+  .action(async () => {
+    const { default: inquirer } = await import('inquirer');
+
+    const appwriteDir = path.join(process.cwd(), 'appwrite');
+    const ledger = loadSecurityLedger(appwriteDir);
+    const author = resolveAuthor();
+    const today = new Date().toISOString().split('T')[0];
+
+    console.log(chalk.blue(`Author resolved as: ${chalk.bold(author)}`));
+
+    const answers = await inquirer.prompt<{
+      resourceType: ResourceType;
+      resourceId: string;
+      rule: string;
+      justification: string;
+    }>([
+      {
+        type: 'list',
+        name: 'resourceType',
+        message: 'Resource type:',
+        choices: RESOURCE_TYPES,
+      },
+      {
+        type: 'input',
+        name: 'resourceId',
+        message: 'Resource ID (collection/bucket ID):',
+        validate: (v: string) => v.trim().length > 0 || 'Resource ID is required.',
+      },
+      {
+        // Use a list picker when rules are configured, otherwise free text
+        type: Object.keys(ledger.rules ?? {}).length > 0 ? 'list' : 'input',
+        name: 'rule',
+        message: 'Rule being bypassed:',
+        choices: Object.keys(ledger.rules ?? {}),
+        validate: (v: string) => v.trim().length > 0 || 'Rule is required.',
+      },
+      {
+        type: 'input',
+        name: 'justification',
+        message: 'Technical justification:',
+        validate: (v: string) => v.trim().length > 0 || 'Justification is required.',
+      },
+    ]);
+
+    const type = answers.resourceType === 'Collection' ? 'collections' : 'buckets';
+
+    if (!ledger.exceptions[type]) ledger.exceptions[type] = {};
+    const bucket = ledger.exceptions[type]!;
+    if (!bucket[answers.resourceId]) bucket[answers.resourceId] = [];
+
+    bucket[answers.resourceId].push({
+      rule: answers.rule.trim(),
+      justification: answers.justification.trim(),
+      author,
+      date: today,
+    });
+
+    saveSecurityLedger(appwriteDir, ledger);
+    console.log(
+      chalk.green(`\n✅ Exception recorded in appwrite/security.json by '${author}' on ${today}.`),
+    );
+  });
+
+exceptions
+  .command('list')
+  .description('List all security exceptions recorded in appwrite/security.json')
+  .action(() => {
+    const appwriteDir = path.join(process.cwd(), 'appwrite');
+    const ledger = loadSecurityLedger(appwriteDir);
+    const { collections = {}, buckets = {} } = ledger.exceptions;
+
+    const allEntries: Array<{
+      type: string;
+      id: string;
+      rule: string;
+      author: string;
+      date: string;
+      justification: string;
+    }> = [];
+
+    for (const [id, exs] of Object.entries(collections)) {
+      for (const ex of exs) allEntries.push({ type: 'collection', id, ...ex });
+    }
+    for (const [id, exs] of Object.entries(buckets)) {
+      for (const ex of exs) allEntries.push({ type: 'bucket', id, ...ex });
+    }
+
+    if (allEntries.length === 0) {
+      console.log(chalk.yellow('No security exceptions recorded in appwrite/security.json.'));
+      return;
+    }
+
+    console.log(chalk.bold.underline('\nSecurity Exceptions\n'));
+
+    for (const entry of allEntries) {
+      console.log(
+        `${chalk.cyan(entry.type.padEnd(12))} ${chalk.bold(entry.id.padEnd(28))} ${chalk.yellow(entry.rule.padEnd(30))} ${chalk.gray(`${entry.author}, ${entry.date}`)}`,
+      );
+      console.log(`  ${chalk.italic(entry.justification)}`);
+      console.log();
     }
   });
 

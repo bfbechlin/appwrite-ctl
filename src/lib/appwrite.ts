@@ -1,4 +1,4 @@
-import { Client, Databases, ID, Query } from 'node-appwrite';
+import { Client, Databases, Query } from 'node-appwrite';
 import { AppConfig } from './config.js';
 
 /**

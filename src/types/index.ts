@@ -16,7 +16,6 @@ export type MigrationFunction = (context: MigrationContext) => Promise<void>;
 export interface Migration {
   id: string;
   description?: string;
-  requiresBackup?: boolean;
   up: MigrationFunction;
   down?: MigrationFunction;
 }
@@ -26,8 +25,28 @@ export interface Config {
   database: string; // Database ID where migrations are tracked (defaults to 'system')
 }
 
-export interface MigrationFile {
-  version: string; // v1, v2, etc.
-  path: string;
-  content: Migration;
+export interface SecurityException {
+  rule: string;
+  justification: string;
+  author: string;
+  date: string; // YYYY-MM-DD
+}
+
+export type SecurityExceptions = Record<string, SecurityException[]>;
+
+export type SecurityRuleSeverity = 'error' | 'warn' | 'off';
+
+export interface SecurityRule {
+  enabled: boolean;
+  severity: SecurityRuleSeverity;
+}
+
+export type SecurityRules = Record<string, SecurityRule>;
+
+export interface SecurityLedger {
+  rules?: SecurityRules;
+  exceptions: {
+    collections?: SecurityExceptions;
+    buckets?: SecurityExceptions;
+  };
 }

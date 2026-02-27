@@ -69,8 +69,8 @@ export const runMigrations = async (envPath: string = '.env') => {
     let migrationModule;
     try {
       migrationModule = await jiti.import(validIndexFile);
-    } catch (e) {
-      console.error(`Failed to load migration file ${validIndexFile}:`, e);
+    } catch (loadError) {
+      console.error(`Failed to load migration file ${validIndexFile}:`, loadError);
       process.exit(1);
     }
 
@@ -88,25 +88,7 @@ export const runMigrations = async (envPath: string = '.env') => {
 
     console.log(`Applying version ${version} (${migration.id})...`);
 
-    // 3. Backup hook.
-    if (migration.requiresBackup && config.backupCommand) {
-      console.log('Running backup command...');
-      try {
-        const { exec } = await import('child_process');
-        const { promisify } = await import('util');
-        const execAsync = promisify(exec);
-        await execAsync(config.backupCommand);
-      } catch (error) {
-        console.error('Backup failed:', error);
-        process.exit(1);
-      }
-    } else if (migration.requiresBackup && !config.backupCommand) {
-      console.warn(
-        'Migration requires backup but BACKUP_COMMAND is not set. Proceeding with caution...',
-      );
-    }
-
-    // 4. Schema sync via CLI push.
+    // 3. Schema sync via CLI push.
     const snapshotPath = path.join(versionPath, snapshotFilename);
     if (fs.existsSync(snapshotPath)) {
       console.log(`Pushing schema snapshot for ${version}...`);
@@ -157,6 +139,8 @@ export const runMigrations = async (envPath: string = '.env') => {
 async function waitForAttributes(databases: Databases, snapshotPath: string) {
   console.log('Polling attribute status...');
 
+  const MAX_ATTEMPTS = 60; // 60 × 2 s = 2-minute timeout per collection
+
   let schema: any;
   try {
     schema = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
@@ -187,7 +171,17 @@ async function waitForAttributes(databases: Databases, snapshotPath: string) {
     console.log(`Checking attributes for table ${table.name} (${collectionId})...`);
 
     let allAvailable = false;
+    let attempts = 0;
     while (!allAvailable) {
+      if (attempts >= MAX_ATTEMPTS) {
+        console.warn(
+          chalk.yellow(
+            `  ⚠ Timed out waiting for attributes on ${collectionId} after ${MAX_ATTEMPTS} attempts. Proceeding anyway.`,
+          ),
+        );
+        break;
+      }
+      attempts++;
       try {
         const response = await databases.listAttributes(databaseId, collectionId);
         const attributes = response.attributes;

@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execFile as _execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
@@ -6,6 +6,7 @@ import chalk from 'chalk';
 import { AppConfig } from './config.js';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(_execFile);
 
 const SNAPSHOT_FILENAME = 'appwrite.config.json';
 
@@ -13,14 +14,20 @@ const SNAPSHOT_FILENAME = 'appwrite.config.json';
  * Configure the Appwrite CLI client for non-interactive use via API key.
  */
 export const configureClient = async (config: AppConfig): Promise<void> => {
+  // Use execFile (not exec) to pass each argument separately — prevents command injection
+  // if endpoint / projectId / apiKey contain shell-special characters.
   const args = [
-    `--endpoint ${config.endpoint}`,
-    `--project-id ${config.projectId}`,
-    `--key ${config.apiKey}`,
+    'client',
+    '--endpoint',
+    config.endpoint,
+    '--project-id',
+    config.projectId,
+    '--key',
+    config.apiKey,
   ];
 
   try {
-    await execAsync(`appwrite client ${args.join(' ')}`);
+    await execFileAsync('appwrite', args);
     console.log(chalk.green('Appwrite CLI configured successfully.'));
   } catch (error: any) {
     throw new Error(
@@ -68,9 +75,7 @@ export const pullSnapshot = async (targetDir?: string): Promise<string> => {
     console.log(chalk.green(`Snapshot saved to ${targetPath}`));
 
     // Cleanup: Remove the root appwrite.config.json created by the pull command.
-    if (fs.existsSync(rootConfig)) {
-      fs.unlinkSync(rootConfig);
-    }
+    fs.unlinkSync(rootConfig);
     return targetPath;
   }
 

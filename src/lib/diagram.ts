@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { loadSecurityLedger, getExceptions } from './security.js';
+import type { SecurityLedger, SecurityException } from '../types/index.js';
 
 interface Column {
   key: string;
@@ -76,6 +78,17 @@ const MERMAID_CARDINALITY: Record<string, string> = {
 };
 
 /**
+ * Sanitize a string for safe embedding inside Mermaid erDiagram entity/field names.
+ * Braces, backticks, double-quotes, and newlines can break Mermaid's parser.
+ */
+const sanitizeMermaid = (value: string): string =>
+  value
+    .replace(/[\r\n]+/g, ' ') // no literal newlines
+    .replace(/[{}]/g, '') // brace characters end entity blocks
+    .replace(/"/g, "'") // double-quote ends Mermaid label strings
+    .replace(/`/g, "'"); // backtick is a Mermaid reserved delimiter
+
+/**
  * Map Appwrite column types to concise display types for the ER diagram.
  */
 const mapColumnType = (col: Column): string => {
@@ -109,7 +122,7 @@ const buildErDiagram = (tables: Table[]): string => {
   const renderedPairs = new Set<string>();
 
   for (const table of tables) {
-    const entityName = table.name;
+    const entityName = sanitizeMermaid(table.name);
     lines.push(`    ${entityName} {`);
 
     // Always add implicit id primary key
@@ -119,20 +132,22 @@ const buildErDiagram = (tables: Table[]): string => {
       if (col.type === 'relationship') {
         // Only emit from the parent side, and skip if pair already rendered
         if (col.side === 'parent' && col.relatedTable) {
-          const pairKey = [entityName, col.relatedTable].sort().join(':');
+          const relatedName = sanitizeMermaid(col.relatedTable);
+          const pairKey = [entityName, relatedName].sort().join(':');
           if (!renderedPairs.has(pairKey)) {
             renderedPairs.add(pairKey);
             const cardinality = MERMAID_CARDINALITY[col.relationType ?? 'oneToMany'] ?? '||--||';
-            const label = `"${col.key}"`;
-            relationships.push(`    ${entityName} ${cardinality} ${col.relatedTable} : ${label}`);
+            const label = `"${sanitizeMermaid(col.key)}"`;
+            relationships.push(`    ${entityName} ${cardinality} ${relatedName} : ${label}`);
           }
         }
         continue;
       }
 
       const type = mapColumnType(col);
+      const colKey = sanitizeMermaid(col.key);
       const comment = col.required ? '"NOT NULL"' : '';
-      lines.push(`        ${type} ${col.key} ${comment}`.trimEnd());
+      lines.push(`        ${type} ${colKey} ${comment}`.trimEnd());
     }
 
     lines.push(`    }`);
@@ -148,9 +163,24 @@ const buildErDiagram = (tables: Table[]): string => {
 };
 
 /**
+ * Render security exception callout lines into a `> [!WARNING]` block.
+ */
+const buildSecurityCallout = (exceptions: SecurityException[]): string => {
+  if (exceptions.length === 0) return '';
+  const lines: string[] = [''];
+  lines.push('> [!WARNING]');
+  for (const ex of exceptions) {
+    lines.push(
+      `> **Security Exception Acknowledged:** (\`${ex.rule}\`) — *${ex.justification}* — (Author: ${ex.author}, ${ex.date})`,
+    );
+  }
+  return lines.join('\n');
+};
+
+/**
  * Build markdown documentation for a single collection.
  */
-const buildCollectionDoc = (table: Table): string => {
+const buildCollectionDoc = (table: Table, exceptions: SecurityException[] = []): string => {
   const sections: string[] = [];
   const status = table.enabled ? '🟢 Enabled' : '🔴 Disabled';
   sections.push(`#### ${table.name} (\`${table.$id}\`)`);
@@ -231,13 +261,16 @@ const buildCollectionDoc = (table: Table): string => {
     }
   }
 
+  const callout = buildSecurityCallout(exceptions);
+  if (callout) sections.push(callout);
+
   return sections.join('\n');
 };
 
 /**
  * Build the buckets documentation section.
  */
-const buildBucketsDoc = (buckets: Bucket[]): string => {
+const buildBucketsDoc = (buckets: Bucket[], ledger?: SecurityLedger): string => {
   if (buckets.length === 0) return '';
 
   const lines: string[] = [];
@@ -269,6 +302,10 @@ const buildBucketsDoc = (buckets: Bucket[]): string => {
         lines.push(`| \`${perm}\` |`);
       }
     }
+
+    const bucketExceptions = ledger ? getExceptions(ledger, 'buckets', b.$id) : [];
+    const callout = buildSecurityCallout(bucketExceptions);
+    if (callout) lines.push(callout);
   }
 
   return lines.join('\n');
@@ -281,8 +318,12 @@ export const generateSchemaDoc = (snapshotPath: string, version: string): string
   const raw = fs.readFileSync(snapshotPath, 'utf-8');
   const snapshot: Snapshot = JSON.parse(raw);
 
-  // Load migration config to discover the system database name
-  const configPath = path.join(process.cwd(), 'appwrite', 'migration', 'config.json');
+  // Load security ledger from appwrite/ at the project root
+  const appwriteDir = path.join(process.cwd(), 'appwrite');
+  const ledger = loadSecurityLedger(appwriteDir);
+
+  // Load appwrite-ctl config to discover the system database name
+  const configPath = path.join(process.cwd(), 'appwrite', 'appwrite-ctl.config.json');
   let systemDbName = 'system';
   if (fs.existsSync(configPath)) {
     try {
@@ -324,14 +365,15 @@ export const generateSchemaDoc = (snapshotPath: string, version: string): string
 
     for (const table of dbTables) {
       sections.push('');
-      sections.push(buildCollectionDoc(table));
+      const collectionExceptions = getExceptions(ledger, 'collections', table.$id);
+      sections.push(buildCollectionDoc(table, collectionExceptions));
     }
   }
 
   // Buckets section
   if (snapshot.buckets.length > 0) {
     sections.push('');
-    sections.push(buildBucketsDoc(snapshot.buckets));
+    sections.push(buildBucketsDoc(snapshot.buckets, ledger));
   }
 
   return sections.join('\n') + '\n';
